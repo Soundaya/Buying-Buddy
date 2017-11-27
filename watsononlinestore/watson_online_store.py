@@ -504,6 +504,7 @@ class WatsonOnlineStore:
         :returns: False indicating no need for UI input, just return to Watson
         :rtype: Bool
         """
+        query_string = ""
         if (self.context.get('brand_selection') and self.context.get('small_appliances_choice')):
 
             if (self.context['brand_selection'] != "" and self.context['small_appliances_choice'] != ""):
@@ -526,7 +527,10 @@ class WatsonOnlineStore:
         if self.discovery_client:
 
             try:
-                response = self.get_discovery_response(query_string)
+                if query_string != "":
+                    response = self.get_discovery_response(query_string)
+                if query_string == "":
+                    response = {'discovery_result': repr("No Query formed. Please begin again")}
             except Exception as e:
                 response = {'discovery_result': repr(e)}
 
@@ -723,8 +727,12 @@ class WatsonOnlineStore:
         """
         cust = self.customer.email
         shopping_list = self.cloudant_online_store.list_shopping_cart(cust)
-        formatted_out = "\n".join("{}) {}".format(i + 1, item.encode('utf-8'))
+        if len(shopping_list)> 0:
+            formatted_out = "\n".join("{}) {}".format(i + 1, item.encode('utf-8'))
                                   for i, item in enumerate(shopping_list))
+        else:
+            formatted_out = "Your cart is empty"
+
         self.context['shopping_cart'] = formatted_out
 
         # no need for user input, return to Watson Dialogue
@@ -744,7 +752,7 @@ class WatsonOnlineStore:
         email = self.customer.email
         shopping_list = self.cloudant_online_store.list_shopping_cart(email)
         try:
-            if self.context['cart_item'] = 'clear':
+            if self.context['cart_item'] == 'clear':
                 delete_all = 'yes'
 
             item_num = int(self.context['cart_item'])
@@ -804,9 +812,20 @@ class WatsonOnlineStore:
     #     self.context = self.context_merge(self.context, formatted_list)
     #     return True
 
+    def handle_checkout(self):
+        """ Removes all items from the cart"""
+        email = self.customer.email
+        shopping_list = self.cloudant_online_store.list_shopping_cart(email)
+
+        for _index, item in enumerate(shopping_list):
+            self.cloudant_online_store.delete_item_shopping_cart(email, item)
+        self.clear_shopping_cart()  # this actually clears the context
+
+        return True
+
     def list_categories_available(self):
 
-        category_list = ["Small Appliances", "Watches", "Sunglasses"]
+        category_list = ["Small Appliances", "Watches"]
 
         formatted_out = "\n".join("{}) {}".format(i + 1, item.encode('utf-8'))
                                   for i, item in enumerate(category_list))
@@ -866,6 +885,7 @@ class WatsonOnlineStore:
                 output =  self.handle_discovery_query()
                 if output == True :
                     sender.send_message(self.context.get('discovery_result'))
+                    sender.send_message('Please select the item you would like to add to cart (Choose by number)')
                     self.context['discovery_string'] = ''
                     self.context['discovery_result'] = ''
                 else:
@@ -890,7 +910,8 @@ class WatsonOnlineStore:
             if ('cart_item' in self.context.keys() and
                self.context['cart_item'] != ''):
                 return self.handle_delete_from_cart()
-
+        elif cart_action == 'checkout':
+            return self.handle_checkout()
         if self.context.get('get_input') == 'no':
             return False
 
